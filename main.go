@@ -90,7 +90,7 @@ func main() {
 
 		defer resp.Body.Close()
 		respText, _ := ioutil.ReadAll(resp.Body)
-
+		c.Header("Cache-Control", "public,max-age=86400")
 		c.String(http.StatusOK, string(respText))
 	})
 
