@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	_ "github.com/heroku/x/hmetrics/onload"
 	"github.com/russross/blackfriday"
@@ -47,10 +48,17 @@ func main() {
 		log.Fatal("$PORT must be set")
 	}
 
-	router := gin.New()
+	router := gin.Default()
 	router.Use(gin.Logger())
 	router.LoadHTMLGlob("templates/*.tmpl.html")
 	router.Static("/static", "static")
+
+	router.Use(cors.New(cors.Config{
+		AllowMethods:    []string{"GET"},
+		AllowHeaders:    []string{"Origin"},
+		ExposeHeaders:   []string{"Content-Length"},
+		AllowAllOrigins: true,
+	}))
 
 	router.GET("/", func(c *gin.Context) {
 		c.HTML(http.StatusOK, "index.tmpl.html", nil)
