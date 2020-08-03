@@ -41,6 +41,40 @@ query($text: String) {
   }
 }`
 
+type Hyperlink struct {
+	Url string `json:"url"`
+}
+
+type ArticleReply struct {
+	Id        string `json:"id"`
+	Text      string `json:"text"`
+	Type      string `json:"type"`
+	Reference string `json:"reference"`
+}
+
+type Node struct {
+	Id             string         `json:"id"`
+	Text           string         `json:"text"`
+	Hyperlinks     []Hyperlink    `json:"hyperlinks"`
+	ArticleReplies []ArticleReply `json:"articleReplies"`
+}
+
+type Edge struct {
+	Node Node `json:"node"`
+}
+
+type ArticleList struct {
+	Edges []Edge `json:"edges"`
+}
+
+type Data struct {
+	ListArticles ArticleList `json:"ListArticles"`
+}
+
+type CofactResponse struct {
+	Data Data `json:"data"`
+}
+
 func main() {
 	port := os.Getenv("PORT")
 
@@ -68,31 +102,40 @@ func main() {
 		c.String(http.StatusOK, string(blackfriday.Run([]byte("**hi!**"))))
 	})
 
-	router.GET("/cofacts", func(c *gin.Context) {
-		type CofactsRequestVariables struct {
-			Text string `json:"text"`
-		}
-
-		type CofactsRequest struct {
-			Query     string                  `json:"query"`
-			Variables CofactsRequestVariables `json:"variables"`
-		}
-
-		text := c.DefaultQuery("text", "")
-
-		cofactsQuery := CofactsRequest{
-			Query:     cofactsGqlQuery,
-			Variables: CofactsRequestVariables{Text: text},
-		}
-		body, _ := json.Marshal(&cofactsQuery)
-
-		resp, _ := http.Post("https://cofacts-api.g0v.tw/graphql", "application/json", strings.NewReader(string(body)))
-
-		defer resp.Body.Close()
-		respText, _ := ioutil.ReadAll(resp.Body)
-		c.Header("Cache-Control", "public,max-age=86400")
-		c.String(http.StatusOK, string(respText))
-	})
+	router.GET("/cofacts", handleCofacts)
 
 	router.Run(":" + port)
+}
+
+func handleCofacts(c *gin.Context) {
+	text := c.DefaultQuery("text", "")
+
+	respText := callCofactsApi(text)
+
+	c.Header("Cache-Control", "public,max-age=86400")
+	c.String(http.StatusOK, string(respText))
+}
+
+func callCofactsApi(text string) string {
+	type CofactsRequestVariables struct {
+		Text string `json:"text"`
+	}
+
+	type CofactsRequest struct {
+		Query     string                  `json:"query"`
+		Variables CofactsRequestVariables `json:"variables"`
+	}
+
+	cofactsQuery := CofactsRequest{
+		Query:     cofactsGqlQuery,
+		Variables: CofactsRequestVariables{Text: text},
+	}
+	body, _ := json.Marshal(&cofactsQuery)
+
+	resp, _ := http.Post("https://cofacts-api.g0v.tw/graphql", "application/json", strings.NewReader(string(body)))
+
+	defer resp.Body.Close()
+	respText, _ := ioutil.ReadAll(resp.Body)
+
+	return string(respText)
 }
