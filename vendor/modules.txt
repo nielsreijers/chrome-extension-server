@@ -37,5 +37,9 @@ github.com/ugorji/go/codec
 golang.org/x/sys/unix
 # gopkg.in/go-playground/validator.v9 v9.29.1
 gopkg.in/go-playground/validator.v9
+# gopkg.in/vmarkovtsev/go-lcss.v1 v1.0.0-20181020221121-dfc501d07ea0
+gopkg.in/vmarkovtsev/go-lcss.v1
 # gopkg.in/yaml.v2 v2.2.2
 gopkg.in/yaml.v2
+# mvdan.cc/xurls/v2 v2.2.0
+mvdan.cc/xurls/v2
