@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -106,6 +107,7 @@ func main() {
 		AllowHeaders:    []string{"Origin", "text"},
 		ExposeHeaders:   []string{"Content-Length"},
 		AllowAllOrigins: true,
+		MaxAge:          48 * time.Hour,
 	}))
 
 	router.GET("/", func(c *gin.Context) {
