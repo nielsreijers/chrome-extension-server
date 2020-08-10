@@ -116,7 +116,8 @@ func main() {
 		c.String(http.StatusOK, string(blackfriday.Run([]byte("**hi!**"))))
 	})
 
-	router.POST("/cofacts", handleCofactsPost)
+	router.GET("/cofacts", handleCofactsRequestWithContentInBody)
+	router.POST("/cofacts", handleCofactsRequestWithContentInBody)
 
 	router.Run(":" + port)
 }
@@ -175,7 +176,13 @@ func removeWhitespace(s string) string {
 	return s
 }
 
-func handleCofactsPost(c *gin.Context) {
+func handleCofactsGet(c *gin.Context) {
+	text := c.DefaultQuery("text", "")
+
+	handleCofacts(c, text)
+}
+
+func handleCofactsRequestWithContentInBody(c *gin.Context) {
 	body, err := c.GetRawData()
 	if err != nil {
 		c.String(http.StatusInternalServerError, "error:", err)
