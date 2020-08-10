@@ -103,7 +103,7 @@ func main() {
 
 	router.Use(cors.New(cors.Config{
 		AllowMethods:    []string{"GET"},
-		AllowHeaders:    []string{"Origin"},
+		AllowHeaders:    []string{"Origin", "text"},
 		ExposeHeaders:   []string{"Content-Length"},
 		AllowAllOrigins: true,
 	}))
@@ -116,7 +116,7 @@ func main() {
 		c.String(http.StatusOK, string(blackfriday.Run([]byte("**hi!**"))))
 	})
 
-	router.GET("/cofacts", handleCofactsRequestWithContentInBody)
+	router.GET("/cofacts", handleCofactsRequestWithContentInHeader)
 	router.POST("/cofacts", handleCofactsRequestWithContentInBody)
 
 	router.Run(":" + port)
@@ -180,6 +180,16 @@ func handleCofactsGet(c *gin.Context) {
 	text := c.DefaultQuery("text", "")
 
 	handleCofacts(c, text)
+}
+
+func handleCofactsRequestWithContentInHeader(c *gin.Context) {
+	body, err := url.QueryUnescape(c.Request.Header.Get("text"))
+	if err != nil {
+		c.String(http.StatusInternalServerError, "error:", err)
+		return
+	}
+
+	handleCofacts(c, body)
 }
 
 func handleCofactsRequestWithContentInBody(c *gin.Context) {
