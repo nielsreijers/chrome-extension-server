@@ -2,21 +2,24 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
+	"runtime/pprof"
 	"strings"
 	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	_ "github.com/heroku/x/hmetrics/onload"
-	"github.com/russross/blackfriday"
 	"gopkg.in/vmarkovtsev/go-lcss.v1"
 	"mvdan.cc/xurls/v2"
 )
+
+const DEBUG = false
 
 const cofactsGqlQuery = `
 query($text: String) {
@@ -90,7 +93,21 @@ type CofactResponse struct {
 	Data Data `json:"data"`
 }
 
+var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
+
 func main() {
+	if DEBUG {
+		flag.Parse()
+		if *cpuprofile != "" {
+			f, err := os.Create(*cpuprofile)
+			if err != nil {
+				log.Fatal(err)
+			}
+			pprof.StartCPUProfile(f)
+			defer pprof.StopCPUProfile()
+		}
+	}
+
 	port := os.Getenv("PORT")
 
 	if port == "" {
@@ -110,18 +127,24 @@ func main() {
 		MaxAge:          48 * time.Hour,
 	}))
 
-	router.GET("/", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "index.tmpl.html", nil)
-	})
-
-	router.GET("/mark", func(c *gin.Context) {
-		c.String(http.StatusOK, string(blackfriday.Run([]byte("**hi!**"))))
-	})
-
 	router.GET("/cofacts", handleCofactsRequestWithContentInHeader)
 	router.POST("/cofacts", handleCofactsRequestWithContentInBody)
 
-	router.Run(":" + port)
+	if DEBUG {
+		srv := &http.Server{
+			Addr:    ":" + port,
+			Handler: router,
+		}
+		router.POST("/quit", func(c *gin.Context) {
+			srv.Shutdown(nil)
+		})
+		router.GET("/quit", func(c *gin.Context) {
+			srv.Shutdown(nil)
+		})
+		srv.ListenAndServe()
+	} else {
+		router.Run(":" + port)
+	}
 }
 
 func isEquivalent(url1 string, url2 string) bool {
@@ -176,6 +199,68 @@ func removeWhitespace(s string) string {
 	s = strings.ReplaceAll(s, "\t", "")
 	s = strings.ReplaceAll(s, " ", "")
 	return s
+}
+
+func chunk(s []byte, chunkSize int) [][]byte {
+	var chunks [][]byte
+
+	if len(s) == 0 {
+		return make([][]byte, 0)
+	}
+
+	for i := 0; i < len(s); i += chunkSize {
+		nn := i + chunkSize
+		if nn > len(s) {
+			nn = len(s)
+		}
+		chunks = append(chunks, s[i:nn])
+	}
+	return chunks
+}
+
+func lcss_chunked(a []byte, b []byte) []byte {
+	if len(a) > len(b) {
+		return lcss_chunked(b, a)
+	}
+
+	if len(a)*6 > len(b) {
+		// chunking is only faster if there is a large size difference.
+		// (didn't bother to figure out the exact threshold)
+		return lcss.LongestCommonSubstring(a, b)
+	}
+
+	// The performance of lcss.LongestCommonSubstring seems to be quadratic,
+	// despite what the Github page says. If one string is significantly shorter
+	// than the other, then it's faster to chunk the larger string and do
+	// several calls to lcss.LongestCommonSubstring.
+	// We split the largest string in chunks twice the size of the smaller,
+	// and do this twice with the second batch offset by the length of the smaller
+	// string to account for cases where the LCSS spills over into the next chunk.
+	// So if the smaller string is 10 bytes, we chunk the larger into the following
+	// blocks: [ 0:20], [20:40], [40:60] etc,
+	//     and [10:30], [30:50], [50:70] etc.
+	var best []byte = make([]byte, 0)
+	var best_len int = 0
+
+	chunks := chunk(b, 2*len(a))
+	for _, chunk := range chunks {
+		current := lcss.LongestCommonSubstring(a, chunk)
+		if len(current) > best_len {
+			best = current
+			best_len = len(current)
+		}
+	}
+
+	chunks = chunk(b[len(a):], 2*len(a))
+	for _, chunk := range chunks {
+		current := lcss.LongestCommonSubstring(a, chunk)
+		if len(current) > best_len {
+			best = current
+			best_len = len(current)
+		}
+	}
+
+	return best
 }
 
 func handleCofactsGet(c *gin.Context) {
@@ -237,22 +322,14 @@ func handleCofacts(c *gin.Context, text string) {
 			// strip any whitespace for comparison
 			a := removeWhitespace(text)
 			b := removeWhitespace(node.Text)
-			common := lcss.LongestCommonSubstring([]byte(a), []byte(b))
+			common := lcss_chunked([]byte(a), []byte(b))
 			// Match if least 25 characters, or 80% of the query text in common
-			// TODO strip newlines
 			node.IsMatch = (len(common) > 25) || (len(common)*100/len(text) >= 80)
 		}
 	}
 
-	// Convert back to json
-	respTextBytes, err := json.Marshal(&respData)
-	if err != nil {
-		c.String(http.StatusInternalServerError, "error:", err)
-		return
-	}
-
 	c.Header("Cache-Control", "public,max-age=86400")
-	c.String(http.StatusOK, string(respTextBytes))
+	c.JSON(http.StatusOK, respData)
 }
 
 func callCofactsApi(text string) (string, error) {
